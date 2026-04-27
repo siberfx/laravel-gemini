@@ -1,11 +1,11 @@
 <?php
 
-namespace HosseinHezami\LaravelGemini;
+namespace Siberfx\LaravelGemini;
 
 use Illuminate\Support\ServiceProvider;
-use HosseinHezami\LaravelGemini\Console\ModelsCommand;
-use HosseinHezami\LaravelGemini\Factory\ProviderFactory;
-use HosseinHezami\LaravelGemini\Gemini;
+use Siberfx\LaravelGemini\Console\ModelsCommand;
+use Siberfx\LaravelGemini\Factory\ProviderFactory;
+use Siberfx\LaravelGemini\Gemini;
 
 class GeminiServiceProvider extends ServiceProvider
 {
@@ -15,8 +15,8 @@ class GeminiServiceProvider extends ServiceProvider
     public function register(): void
     {
         $this->mergeConfigFrom(__DIR__ . '/Config/gemini.php', 'gemini');
-		
-		$this->app->singleton(ProviderFactory::class, function ($app) {
+
+        $this->app->singleton(ProviderFactory::class, function ($app) {
             return new ProviderFactory();
         });
 

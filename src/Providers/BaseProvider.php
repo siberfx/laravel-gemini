@@ -1,9 +1,9 @@
 <?php
 
-namespace HosseinHezami\LaravelGemini\Providers;
+namespace Siberfx\LaravelGemini\Providers;
 
-use HosseinHezami\LaravelGemini\Http\HttpClient;
-use HosseinHezami\LaravelGemini\Exceptions;
+use Siberfx\LaravelGemini\Http\HttpClient;
+use Siberfx\LaravelGemini\Exceptions;
 use Illuminate\Support\Facades\Http;
 
 abstract class BaseProvider
@@ -36,7 +36,7 @@ abstract class BaseProvider
 
         return new ("HosseinHezami\\LaravelGemini\\Responses\\" . $type . "Response")($data);
     }
-    
+
     /**
      * Upload a file to Gemini API and return its URI.
      *
@@ -106,7 +106,7 @@ abstract class BaseProvider
 
         return $json['file']['uri'];
     }
-    
+
     protected function getMimeType(string $fileType, string $filePath): string
     {
         $mimeTypes = [

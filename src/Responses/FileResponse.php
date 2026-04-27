@@ -1,8 +1,8 @@
 <?php
 
-namespace HosseinHezami\LaravelGemini\Responses;
+namespace Siberfx\LaravelGemini\Responses;
 
-use HosseinHezami\LaravelGemini\Exceptions\ApiException;
+use Siberfx\LaravelGemini\Exceptions\ApiException;
 
 class FileResponse
 {

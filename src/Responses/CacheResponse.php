@@ -1,6 +1,6 @@
 <?php
 
-namespace HosseinHezami\LaravelGemini\Responses;
+namespace Siberfx\LaravelGemini\Responses;
 
 class CacheResponse
 {

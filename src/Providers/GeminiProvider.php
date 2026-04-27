@@ -1,13 +1,13 @@
 <?php
 
-namespace HosseinHezami\LaravelGemini\Providers;
+namespace Siberfx\LaravelGemini\Providers;
 
-use HosseinHezami\LaravelGemini\Contracts\ProviderInterface;
-use HosseinHezami\LaravelGemini\Responses;
-use HosseinHezami\LaravelGemini\Exceptions\ApiException;
-use HosseinHezami\LaravelGemini\Exceptions\StreamException;
-use HosseinHezami\LaravelGemini\Exceptions\RateLimitException;
-use HosseinHezami\LaravelGemini\Exceptions\ValidationException;
+use Siberfx\LaravelGemini\Contracts\ProviderInterface;
+use Siberfx\LaravelGemini\Responses;
+use Siberfx\LaravelGemini\Exceptions\ApiException;
+use Siberfx\LaravelGemini\Exceptions\StreamException;
+use Siberfx\LaravelGemini\Exceptions\RateLimitException;
+use Siberfx\LaravelGemini\Exceptions\ValidationException;
 use Illuminate\Support\Facades\Log;
 
 class GeminiProvider extends BaseProvider implements ProviderInterface
@@ -50,7 +50,7 @@ class GeminiProvider extends BaseProvider implements ProviderInterface
         }
         return $this->upload($params['fileType'], $params['filePath']);
     }
-    
+
     public function listFiles(array $params = []): Responses\FileResponse
     {
         try {
@@ -109,13 +109,13 @@ class GeminiProvider extends BaseProvider implements ProviderInterface
         if (!empty($params['displayName'])) {
             $payload['displayName'] = $params['displayName'];
         }
-        
+
         if (!empty($params['expireTime'])) {
             $payload['expireTime'] = $params['expireTime'];
         } elseif (!empty($params['ttl'])) {
             $payload['ttl'] = $params['ttl'] ?? config('gemini.caching.default_ttl');
         }
-        
+
         try {
             $response = $this->http->post('/v1beta/cachedContents', $payload);
             return $this->handleResponse($response, 'Cache');
@@ -204,7 +204,7 @@ class GeminiProvider extends BaseProvider implements ProviderInterface
             $response = $this->http->withOptions([
                 'stream' => true,
             ])->post("/v1beta/models/{$params['model']}:streamGenerateContent", $this->buildRequestBody($params));
-            
+
             $body = $response->getBody();
             $buffer = '';
 
@@ -219,7 +219,7 @@ class GeminiProvider extends BaseProvider implements ProviderInterface
                         if (strpos($line, 'data: ') === 0) {
                             $jsonStr = substr($line, 5); // Remove 'data: ' prefix
                             $data = json_decode(trim($jsonStr), true);
-                            
+
                             if (json_last_error() === JSON_ERROR_NONE) {
                                 $part = $data['candidates'][0]['content']['parts'][0] ?? [];
                                 $callback($part);
@@ -236,7 +236,7 @@ class GeminiProvider extends BaseProvider implements ProviderInterface
             );
         }
     }
-    
+
     protected function executeRequest(array $params, string $responseType)
     {
         $method = $params['method'] ?? 'generateContent';
@@ -251,7 +251,7 @@ class GeminiProvider extends BaseProvider implements ProviderInterface
                 sleep(5);
                 $status = $this->http->get($operation)->json();
             } while (!$status['done']);
-            return $this->handleResponse($this->http->get("/v1beta/".$status['response']['generatedSamples'][0][$responseType === 'Video' ? 'video' : 'uri']), $responseType);
+            return $this->handleResponse($this->http->get("/v1beta/" . $status['response']['generatedSamples'][0][$responseType === 'Video' ? 'video' : 'uri']), $responseType);
         }
 
         // Check for error response
@@ -259,7 +259,7 @@ class GeminiProvider extends BaseProvider implements ProviderInterface
             Log::error('Gemini API error response', ['response' => $response->json()]);
             throw new ApiException("API request failed with finishReason: {$response->json()['candidates'][0]['finishReason']}");
         }
-        
+
         return $this->handleResponse($response, $responseType);
     }
 
@@ -276,7 +276,7 @@ class GeminiProvider extends BaseProvider implements ProviderInterface
                         'mimeType' => $this->getMimeType($params['fileType'], $params['filePath']),
                         'data' => base64_encode(file_get_contents($params['filePath']))
                     ]
-                    ] : [
+                ] : [
                     'fileData' => [
                         'mimeType' => $this->getMimeType($params['fileType'], $params['filePath']),
                         'fileUri' => $this->upload($params['fileType'], $params['filePath'])
@@ -305,7 +305,7 @@ class GeminiProvider extends BaseProvider implements ProviderInterface
         } else {
             // Structure for generateContent
             if (!isset($params['prompt']) || empty($params['prompt'])) {
-            throw new ValidationException('Prompt is required for audio generation (TTS).');
+                throw new ValidationException('Prompt is required for audio generation (TTS).');
             }
             $body = [
                 'contents' => $params['contents'] ?? [['parts' => [['text' => $params['prompt'] ?? '']]]],
@@ -374,7 +374,7 @@ class GeminiProvider extends BaseProvider implements ProviderInterface
         }
 
         if ($forLongRunning) {
-        // For predictLongRunning, no additional changes needed as per docs
+            // For predictLongRunning, no additional changes needed as per docs
         }
         return $body;
     }

@@ -1,20 +1,20 @@
 <?php
 
-namespace HosseinHezami\LaravelGemini\Responses;
-use HosseinHezami\LaravelGemini\Exceptions\ApiException;
+namespace Siberfx\LaravelGemini\Responses;
+use Siberfx\LaravelGemini\Exceptions\ApiException;
 
 class AudioResponse extends BaseResponse
 {
     public function content(): string
     {
-		if (isset($this->data['candidates'][0]['finishReason']) && $this->data['candidates'][0]['finishReason'] != 'STOP') {
+        if (isset($this->data['candidates'][0]['finishReason']) && $this->data['candidates'][0]['finishReason'] != 'STOP') {
             $finishReason = $this->data['candidates'][0]['finishReason'] ?? 'UNKNOWN';
             throw new ApiException("Failed to retrieve audio content. Finish reason: {$finishReason}");
         }
         return base64_decode($this->data['candidates'][0]['content']['parts'][0]['inlineData']['data']);
     }
-	
-	/**
+
+    /**
      * Extract audio metadata from mimeType
      */
     public function getAudioMeta(): array
@@ -32,18 +32,18 @@ class AudioResponse extends BaseResponse
             foreach ($parts as $part) {
                 $part = trim($part);
                 if (str_starts_with($part, 'rate=')) {
-                    $sampleRate = (int)substr($part, 5);
+                    $sampleRate = (int) substr($part, 5);
                 } elseif (str_starts_with($part, 'channels=')) {
-                    $channels = (int)substr($part, 9);
+                    $channels = (int) substr($part, 9);
                 }
             }
         }
 
         return [
-            'mimeType'       => $mime,
-            'sampleRate'     => $sampleRate,
-            'channels'       => $channels,
-            'bitsPerSample'  => $bitsPerSample,
+            'mimeType' => $mime,
+            'sampleRate' => $sampleRate,
+            'channels' => $channels,
+            'bitsPerSample' => $bitsPerSample,
         ];
     }
 

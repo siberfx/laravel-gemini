@@ -48,7 +48,7 @@ return [
 
     'providers' => [
         'gemini' => [
-            'class' => \HosseinHezami\LaravelGemini\Providers\GeminiProvider::class,
+            'class' => \Siberfx\LaravelGemini\Providers\GeminiProvider::class,
             'models' => [
                 'text' => 'gemini-2.5-flash-lite',
                 'image' => 'gemini-2.5-flash-image-preview',
@@ -69,8 +69,8 @@ return [
              * @param array $speakerVoices e.g., [['speaker' => 'Joe', 'voiceName' => 'Kore'], ['speaker' => 'Jane', 'voiceName' => 'Puck']]
              */
             'default_speech_config' => [
-				'voiceName' => 'Kore'
-			],
+                'voiceName' => 'Kore'
+            ],
         ],
     ],
 

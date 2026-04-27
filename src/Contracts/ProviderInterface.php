@@ -1,8 +1,8 @@
 <?php
 
-namespace HosseinHezami\LaravelGemini\Contracts;
+namespace Siberfx\LaravelGemini\Contracts;
 
-use HosseinHezami\LaravelGemini\Responses;
+use Siberfx\LaravelGemini\Responses;
 
 interface ProviderInterface
 {
@@ -15,7 +15,7 @@ interface ProviderInterface
     public function generateAudio(array $payload): Responses\AudioResponse;
 
     public function embeddings(array $params): array;
-    
+
     public function uploadFile(array $params): string;
     public function listFiles(array $params): Responses\FileResponse;
     public function getFile(string $fileName): Responses\FileResponse;

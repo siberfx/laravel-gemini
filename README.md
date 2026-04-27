@@ -91,7 +91,7 @@ This is useful when you want to switch between multiple keys (e.g. per-user or p
 **Example:**
 
 ```php
-use HosseinHezami\LaravelGemini\Facades\Gemini;
+use Siberfx\LaravelGemini\Facades\Gemini;
 
 // Dynamically set API key (takes priority over .env)
 Gemini::setApiKey('my-custom-api-key');
@@ -134,7 +134,7 @@ When you call `->generate()` (or a polling save on long-running jobs) you typica
 ### Gemini::
 
 ```php
-use HosseinHezami\LaravelGemini\Facades\Gemini;
+use Siberfx\LaravelGemini\Facades\Gemini;
 ```
 
 ### TextBuilder (`Gemini::text()`)

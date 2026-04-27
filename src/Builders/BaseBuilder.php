@@ -1,10 +1,10 @@
 <?php
 
-namespace HosseinHezami\LaravelGemini\Builders;
+namespace Siberfx\LaravelGemini\Builders;
 
-use HosseinHezami\LaravelGemini\Contracts\ProviderInterface;
-use HosseinHezami\LaravelGemini\Exceptions\ValidationException;
-use HosseinHezami\LaravelGemini\Responses\CacheResponse;
+use Siberfx\LaravelGemini\Contracts\ProviderInterface;
+use Siberfx\LaravelGemini\Exceptions\ValidationException;
+use Siberfx\LaravelGemini\Responses\CacheResponse;
 
 abstract class BaseBuilder
 {
@@ -16,7 +16,7 @@ abstract class BaseBuilder
     {
         $this->provider = $provider;
         $this->params['capability'] = $this->getCapability();
-        $this->params['defaultProvider'] = config('gemini.default_provider'); 
+        $this->params['defaultProvider'] = config('gemini.default_provider');
         $this->params['model'] = config('gemini.providers.' . $this->params['defaultProvider'] . '.models.' . $this->params['capability']);
         $this->params['method'] = config('gemini.providers.' . $this->params['defaultProvider'] . '.methods.' . $this->params['capability']);
         if (empty($this->params['model'])) {
@@ -147,11 +147,11 @@ abstract class BaseBuilder
 
         // Call provider to create
         $response = $this->provider->createCachedContent($cacheParams);
-        
+
         // Return the cache name for chaining or use
         return $response->name();
     }
-    
+
     public function getCache(string $name): CacheResponse
     {
         if (empty($name)) {

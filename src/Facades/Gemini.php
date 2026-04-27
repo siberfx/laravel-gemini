@@ -1,14 +1,14 @@
 <?php
 
-namespace HosseinHezami\LaravelGemini\Facades;
+namespace Siberfx\LaravelGemini\Facades;
 
 use Illuminate\Support\Facades\Facade;
-use HosseinHezami\LaravelGemini\Builders\TextBuilder;
-use HosseinHezami\LaravelGemini\Builders\ImageBuilder;
-use HosseinHezami\LaravelGemini\Builders\VideoBuilder;
-use HosseinHezami\LaravelGemini\Builders\AudioBuilder;
-use HosseinHezami\LaravelGemini\Builders\FileBuilder;
-use HosseinHezami\LaravelGemini\Builders\CacheBuilder;
+use Siberfx\LaravelGemini\Builders\TextBuilder;
+use Siberfx\LaravelGemini\Builders\ImageBuilder;
+use Siberfx\LaravelGemini\Builders\VideoBuilder;
+use Siberfx\LaravelGemini\Builders\AudioBuilder;
+use Siberfx\LaravelGemini\Builders\FileBuilder;
+use Siberfx\LaravelGemini\Builders\CacheBuilder;
 
 class Gemini extends Facade
 {
@@ -16,8 +16,8 @@ class Gemini extends Facade
     {
         return 'gemini';
     }
-    
-	public static function text(): TextBuilder
+
+    public static function text(): TextBuilder
     {
         return static::getFacadeRoot()->text();
     }

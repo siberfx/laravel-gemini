@@ -1,10 +1,10 @@
 <?php
 
-namespace HosseinHezami\LaravelGemini\Http;
+namespace Siberfx\LaravelGemini\Http;
 
 use Illuminate\Support\Facades\Http;
 use Illuminate\Http\Client\PendingRequest;
-use HosseinHezami\LaravelGemini\Exceptions\RateLimitException;
+use Siberfx\LaravelGemini\Exceptions\RateLimitException;
 
 class HttpClient
 {
@@ -14,7 +14,7 @@ class HttpClient
     {
         $baseUrl = $baseUrl ?? config('gemini.base_uri');
         $apiKey = $apiKey ?? config('gemini.api_key');
-        
+
         $this->client = Http::baseUrl($baseUrl)
             ->withHeaders(['x-goog-api-key' => $apiKey])
             ->timeout(config('gemini.timeout'))
@@ -54,12 +54,12 @@ class HttpClient
     {
         return $this->client->get($url);
     }
-    
+
     public function patch(string $url, array $data): \Illuminate\Http\Client\Response
     {
         return $this->client->patch($url, $data);
     }
-    
+
     public function delete(string $url): \Illuminate\Http\Client\Response
     {
         return $this->client->delete($url);

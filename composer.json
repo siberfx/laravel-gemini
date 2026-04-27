@@ -1,8 +1,14 @@
 {
-    "name": "hosseinhezami/laravel-gemini",
+    "name": "siberfx/laravel-gemini",
     "description": "A production-ready Laravel package to integrate with the Google Gemini API. Supports text, image, video, audio, long-context, structured output, files, caching, function-calling and understanding capabilities.",
-    "keywords": ["laravel", "gemini", "ai", "api", "google"],
-    "version": "1.0.4",
+    "keywords": [
+        "laravel",
+        "gemini",
+        "ai",
+        "api",
+        "google"
+    ],
+    "version": "1.0.6",
     "type": "library",
     "license": "MIT",
     "authors": [
@@ -12,13 +18,13 @@
         }
     ],
     "require": {
-		"php": "^8.2|^8.3|^8.4|^8.5",
-		"illuminate/support": "^10.0|^11.0|^12.0",
-		"illuminate/http": "^10.0|^11.0|^12.0"
+        "php": "^8.4|^8.5",
+        "illuminate/support": "^11.0|^12.0|^13.0",
+        "illuminate/http": "^11.0|^12.0|^13.0"
     },
     "autoload": {
         "psr-4": {
-            "HosseinHezami\\LaravelGemini\\": "src/"
+            "Siberfx\\LaravelGemini\\": "src/"
         },
         "files": [
             "src/Helpers/helpers.php"
@@ -27,10 +33,10 @@
     "extra": {
         "laravel": {
             "providers": [
-                "HosseinHezami\\LaravelGemini\\GeminiServiceProvider"
+                "Siberfx\\LaravelGemini\\GeminiServiceProvider"
             ],
             "aliases": {
-                "Gemini": "HosseinHezami\\LaravelGemini\\Facades\\Gemini"
+                "Gemini": "Siberfx\\LaravelGemini\\Facades\\Gemini"
             }
         }
     },

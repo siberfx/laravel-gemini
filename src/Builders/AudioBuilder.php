@@ -1,10 +1,10 @@
 <?php
 
-namespace HosseinHezami\LaravelGemini\Builders;
+namespace Siberfx\LaravelGemini\Builders;
 
-use HosseinHezami\LaravelGemini\Enums\Capability;
-use HosseinHezami\LaravelGemini\Responses\AudioResponse;
-use HosseinHezami\LaravelGemini\Exceptions\ValidationException;
+use Siberfx\LaravelGemini\Enums\Capability;
+use Siberfx\LaravelGemini\Responses\AudioResponse;
+use Siberfx\LaravelGemini\Exceptions\ValidationException;
 
 class AudioBuilder extends BaseBuilder
 {
@@ -12,8 +12,8 @@ class AudioBuilder extends BaseBuilder
     {
         return Capability::AUDIO->value;
     }
-	
-	/**
+
+    /**
      * Set voice name for single-speaker TTS.
      *
      * @param string $voiceName e.g., 'Kore', 'Puck'
@@ -41,7 +41,7 @@ class AudioBuilder extends BaseBuilder
 
     public function generate(): AudioResponse
     {
-		// Validate voiceName for single-speaker
+        // Validate voiceName for single-speaker
         if (!isset($this->params['multiSpeaker']) || !$this->params['multiSpeaker']) {
             if (!isset($this->params['voiceName']) || empty($this->params['voiceName'])) {
                 throw new ValidationException('Voice name is required for single-speaker TTS.');

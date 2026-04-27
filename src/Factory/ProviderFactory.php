@@ -1,9 +1,9 @@
 <?php
 
-namespace HosseinHezami\LaravelGemini\Factory;
+namespace Siberfx\LaravelGemini\Factory;
 
-use HosseinHezami\LaravelGemini\Contracts\ProviderInterface;
-use HosseinHezami\LaravelGemini\Exceptions\ValidationException;
+use Siberfx\LaravelGemini\Contracts\ProviderInterface;
+use Siberfx\LaravelGemini\Exceptions\ValidationException;
 
 class ProviderFactory
 {

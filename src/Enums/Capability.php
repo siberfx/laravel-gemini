@@ -1,6 +1,6 @@
 <?php
 
-namespace HosseinHezami\LaravelGemini\Enums;
+namespace Siberfx\LaravelGemini\Enums;
 
 enum Capability: string
 {

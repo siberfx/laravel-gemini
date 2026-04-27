@@ -1,6 +1,6 @@
 <?php
 
-namespace HosseinHezami\LaravelGemini\Exceptions;
+namespace Siberfx\LaravelGemini\Exceptions;
 
 use Exception;
 

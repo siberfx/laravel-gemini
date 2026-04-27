@@ -1,10 +1,10 @@
 <?php
 
-namespace HosseinHezami\LaravelGemini\Builders;
+namespace Siberfx\LaravelGemini\Builders;
 
-use HosseinHezami\LaravelGemini\Providers\GeminiProvider;
-use HosseinHezami\LaravelGemini\Responses\CacheResponse;
-use HosseinHezami\LaravelGemini\Exceptions\ValidationException;
+use Siberfx\LaravelGemini\Providers\GeminiProvider;
+use Siberfx\LaravelGemini\Responses\CacheResponse;
+use Siberfx\LaravelGemini\Exceptions\ValidationException;
 
 class CacheBuilder
 {
@@ -14,7 +14,7 @@ class CacheBuilder
     {
         $this->provider = $provider;
     }
-    
+
     // Create a cached content with direct parameters
     public function create(
         string $model,

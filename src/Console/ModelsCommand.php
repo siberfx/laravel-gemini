@@ -1,9 +1,9 @@
 <?php
 
-namespace HosseinHezami\LaravelGemini\Console;
+namespace Siberfx\LaravelGemini\Console;
 
 use Illuminate\Console\Command;
-use HosseinHezami\LaravelGemini\Facades\Gemini;
+use Siberfx\LaravelGemini\Facades\Gemini;
 
 class ModelsCommand extends Command
 {

@@ -1,9 +1,9 @@
 <?php
 
-namespace HosseinHezami\LaravelGemini\Builders;
+namespace Siberfx\LaravelGemini\Builders;
 
-use HosseinHezami\LaravelGemini\Enums\Capability;
-use HosseinHezami\LaravelGemini\Responses\TextResponse;
+use Siberfx\LaravelGemini\Enums\Capability;
+use Siberfx\LaravelGemini\Responses\TextResponse;
 
 class TextBuilder extends BaseBuilder
 {

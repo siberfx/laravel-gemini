@@ -1,18 +1,18 @@
 <?php
 
-namespace HosseinHezami\LaravelGemini\Responses;
+namespace Siberfx\LaravelGemini\Responses;
 
-use HosseinHezami\LaravelGemini\Exceptions\ApiException;
+use Siberfx\LaravelGemini\Exceptions\ApiException;
 
 class ImageResponse extends BaseResponse
 {
     public function content(): string
     {
-        foreach($this->data['candidates'][0]['content']['parts'] as $parts){
-            if(key_exists('inlineData', $parts))
+        foreach ($this->data['candidates'][0]['content']['parts'] as $parts) {
+            if (key_exists('inlineData', $parts))
                 $part = $parts;
         }
-        if(!isset($part))
+        if (!isset($part))
             throw new ApiException("Failed to retrieve image content. No inlineData found.");
         return base64_decode($part['inlineData']['data']);
     }

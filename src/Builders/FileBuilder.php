@@ -1,16 +1,16 @@
 <?php
 
-namespace HosseinHezami\LaravelGemini\Builders;
+namespace Siberfx\LaravelGemini\Builders;
 
-use HosseinHezami\LaravelGemini\Providers\GeminiProvider;
-use HosseinHezami\LaravelGemini\Responses\FileResponse;
-use HosseinHezami\LaravelGemini\Exceptions\ValidationException;
+use Siberfx\LaravelGemini\Providers\GeminiProvider;
+use Siberfx\LaravelGemini\Responses\FileResponse;
+use Siberfx\LaravelGemini\Exceptions\ValidationException;
 
 class FileBuilder
 {
     protected array $params = [];
     protected GeminiProvider $provider;
-    
+
     public function __construct(GeminiProvider $provider)
     {
         $this->provider = $provider;
