@@ -1,21 +1,19 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Siberfx\LaravelGemini\Builders;
 
-use Siberfx\LaravelGemini\Providers\GeminiProvider;
-use Siberfx\LaravelGemini\Responses\CacheResponse;
+use Siberfx\LaravelGemini\Contracts\ProviderInterface;
 use Siberfx\LaravelGemini\Exceptions\ValidationException;
+use Siberfx\LaravelGemini\Responses\CacheResponse;
 
 class CacheBuilder
 {
-    protected GeminiProvider $provider;
+    public function __construct(
+        protected readonly ProviderInterface $provider,
+    ) {}
 
-    public function __construct(GeminiProvider $provider)
-    {
-        $this->provider = $provider;
-    }
-
-    // Create a cached content with direct parameters
     public function create(
         string $model,
         array $contents,
@@ -24,55 +22,46 @@ class CacheBuilder
         array $toolConfig = [],
         ?string $displayName = null,
         ?string $ttl = null,
-        ?string $expireTime = null
+        ?string $expireTime = null,
     ): CacheResponse {
-        if (empty($model) || empty($contents)) {
+        if (blank($model) || $contents === []) {
             throw new ValidationException('Model and contents are required for creating cache.');
         }
 
-        $params = compact('model', 'contents', 'systemInstruction', 'tools', 'toolConfig', 'displayName', 'ttl', 'expireTime');
-        return $this->provider->createCachedContent($params);
+        return $this->provider->createCachedContent(
+            compact('model', 'contents', 'systemInstruction', 'tools', 'toolConfig', 'displayName', 'ttl', 'expireTime')
+        );
     }
 
-    // List cached contents with optional params
     public function list(?int $pageSize = null, ?string $pageToken = null): CacheResponse
     {
-        $params = array_filter(compact('pageSize', 'pageToken'));
-        return $this->provider->listCachedContents($params);
+        return $this->provider->listCachedContents(array_filter(compact('pageSize', 'pageToken')));
     }
 
-    // Get a cached content by name
     public function get(string $name): CacheResponse
     {
-        if (empty($name)) {
-            throw new ValidationException('Cache name is required.');
-        }
-        return $this->provider->getCachedContent($name);
+        return $this->provider->getCachedContent($this->requireName($name));
     }
 
-    // Update cache expiration
-    public function update(
-        string $name,
-        ?string $ttl = null,
-        ?string $expireTime = null
-    ): CacheResponse {
-        if (empty($name)) {
-            throw new ValidationException('Cache name is required.');
-        }
-        if (empty($ttl) && empty($expireTime)) {
+    public function update(string $name, ?string $ttl = null, ?string $expireTime = null): CacheResponse
+    {
+        if (blank($ttl) && blank($expireTime)) {
             throw new ValidationException('TTL or expireTime is required for update.');
         }
 
-        $expiration = array_filter(compact('ttl', 'expireTime'));
-        return $this->provider->updateCachedContent($name, $expiration);
+        return $this->provider->updateCachedContent(
+            $this->requireName($name),
+            array_filter(compact('ttl', 'expireTime')),
+        );
     }
 
-    // Delete a cached content by name
     public function delete(string $name): bool
     {
-        if (empty($name)) {
-            throw new ValidationException('Cache name is required.');
-        }
-        return $this->provider->deleteCachedContent($name);
+        return $this->provider->deleteCachedContent($this->requireName($name));
+    }
+
+    protected function requireName(string $name): string
+    {
+        return filled($name) ? $name : throw new ValidationException('Cache name is required.');
     }
 }

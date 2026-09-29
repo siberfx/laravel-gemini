@@ -2,11 +2,17 @@
 
 A production-ready Laravel package to integrate with the Google Gemini API. Supports text, image, video, audio, long-context, structured output, files, caching, function-calling and understanding capabilities.
 
-[![Version](https://img.shields.io/packagist/v/hosseinhezami/laravel-gemini.svg)](https://packagist.org/packages/hosseinhezami/laravel-gemini)
-[![Downloads](https://img.shields.io/packagist/dt/hosseinhezami/laravel-gemini.svg)](https://packagist.org/packages/hosseinhezami/laravel-gemini)
-[![Star](https://img.shields.io/packagist/stars/hosseinhezami/laravel-gemini.svg)](https://packagist.org/packages/hosseinhezami/laravel-gemini)
-[![License](https://img.shields.io/packagist/l/hosseinhezami/laravel-gemini.svg)](https://packagist.org/packages/hosseinhezami/laravel-gemini)
-[![Laravel Compatible](https://img.shields.io/badge/Laravel-10%2B-brightgreen.svg)](https://hosseinhezami.github.io/laravel-gemini)
+[![Tests](https://github.com/siberfx/laravel-gemini/actions/workflows/tests.yml/badge.svg)](https://github.com/siberfx/laravel-gemini/actions/workflows/tests.yml)
+[![Version](https://img.shields.io/packagist/v/siberfx/laravel-gemini.svg)](https://packagist.org/packages/siberfx/laravel-gemini)
+[![Downloads](https://img.shields.io/packagist/dt/siberfx/laravel-gemini.svg)](https://packagist.org/packages/siberfx/laravel-gemini)
+[![License](https://img.shields.io/packagist/l/siberfx/laravel-gemini.svg)](https://packagist.org/packages/siberfx/laravel-gemini)
+[![PHP](https://img.shields.io/badge/PHP-8.4%20%7C%208.5-777bb4.svg)](https://www.php.net/)
+[![Laravel](https://img.shields.io/badge/Laravel-12%20%7C%2013-ff2d20.svg)](https://github.com/siberfx/laravel-gemini)
+
+## Requirements
+
+- PHP 8.4 or 8.5
+- Laravel 12 or 13
 
 ## Features
 
@@ -24,7 +30,7 @@ A production-ready Laravel package to integrate with the Google Gemini API. Supp
 ## Installation
 
 ```bash
-composer require hosseinhezami/laravel-gemini
+composer require siberfx/laravel-gemini
 ```
 
 Publish the configuration file:
@@ -46,16 +52,20 @@ Configuration lives in `config/gemini.php`. Below are the most important keys an
 | Key | Description | Default |
 |---|---:|---|
 | `api_key` | Your Gemini API key. | `env('GEMINI_API_KEY')` |
-| `base_uri` | Base API endpoint. | `https://generativelanguage.googleapis.com/v1beta/` |
+| `base_uri` | Base API endpoint. | `https://generativelanguage.googleapis.com` |
 | `default_provider` | Which provider config to use by default. | `gemini` |
 | `timeout` | Request timeout in seconds. | `30` |
-| `retry_policy.max_retries` | Retry attempts for failed requests. | `30` |
-| `retry_policy.retry_delay` | Delay between retries in ms. | `1000` |
+| `retry_policy.max_retries` | Retry attempts on connection errors, `429` and `5xx`. | `3` |
+| `retry_policy.retry_delay` | Delay between retries in ms (`Retry-After` wins on `429`). | `1000` |
 | `logging` | Log requests/responses (useful for debugging). | `false` |
 | `stream.chunk_size` | Stream buffer chunk size. | `1024` |
 | `stream.timeout` | Stream timeout (ms). | `1000` |
 | `caching.default_ttl` | Default TTL for cache expiration (e.g., '3600s'). | `'3600s'` |
-| `caching.default_page_size` | Default page size for listing caches. | `50` |
+| `caching.max_page_size` | Default page size for listing caches. | `50` |
+| `long_running.poll_interval` | Seconds between polls for `predictLongRunning` jobs. | `5` |
+| `long_running.timeout` | Max seconds to wait for a long-running job. | `600` |
+
+All scalar values can be overridden via `.env`: `GEMINI_TIMEOUT`, `GEMINI_MAX_RETRIES`, `GEMINI_RETRY_DELAY`, `GEMINI_CACHE_TTL`, `GEMINI_POLL_INTERVAL`, `GEMINI_POLL_TIMEOUT`, …
 
 ### Providers / models / methods
 
@@ -72,12 +82,9 @@ The `providers` array lets you map capability types to models and HTTP methods t
 **Speech config** (`providers.gemini.default_speech_config`) example:
 
 ```php
+// Fallback voice used for single-speaker TTS when ->voiceName() is not called.
 'default_speech_config' => [
     'voiceName' => 'Kore',
-    // 'speakerVoices' => [
-    //     ['speaker' => 'Joe', 'voiceName' => 'Kore'],
-    //     ['speaker' => 'Jane', 'voiceName' => 'Puck'],
-    // ],
 ],
 ```
 
@@ -102,7 +109,12 @@ $response = Gemini::text()
     ->generate();
 
 echo $response->content();
-````
+
+// Or chain it
+$response = Gemini::setApiKey($user->gemini_key)->text()->prompt('Hi')->generate();
+```
+
+> `setApiKey()` changes the key on the shared `Gemini` singleton for the rest of the request / job.
 
 If `setApiKey()` is not called, the package will automatically use the default key from `.env`.
 
@@ -123,11 +135,28 @@ Below is a concise reference of commonly available chainable methods and what th
 ### Common response helpers (Response object)
 When you call `->generate()` (or a polling save on long-running jobs) you typically get a response object with these helpers:
 
-- `content()` — main textual output (string).  
+- `content()` — main output (text for `TextResponse`, raw bytes for image / audio / video).  
 - `model()` — model name used.  
 - `usage()` — usage / billing info returned by the provider.  
 - `requestId()` — provider request id.  
-- `save($path)` — convenience method to download and persist a result to disk (media).
+- `parts()` / `finishReason()` — raw candidate parts and finish reason.  
+- `get('dot.path', $default)` — read any value from the raw payload.  
+- `toArray()` / `json()` — full payload (responses are also `Arrayable` and `JsonSerializable`).  
+- `save($path)` — persist a media result to disk.
+
+`TextResponse` additionally offers `decode()` (parse structured JSON output) and `functionCalls()` (function calls requested by the model).
+
+### Errors
+
+Failed requests throw typed exceptions (all extend `Siberfx\LaravelGemini\Exceptions\BaseException`) carrying the API's error message:
+
+| Status | Exception |
+|---|---|
+| `400` | `ValidationException` |
+| `401` / `403` | `AuthenticationException` |
+| `429` | `RateLimitException` (`$e->retryAfter`) |
+| `5xx` | `ApiException` |
+| connection / other | `NetworkException` |
 
 ---
 
@@ -146,16 +175,19 @@ Common methods:
 | Method | Args | Description |
 |---|---:|---|
 | `model(string)` | model id | Choose model to use. |
-| `prompt(string/array)` | user prompt or parts | Main prompt(s). |
+| `prompt(string)` | user prompt | Main prompt. |
 | `system(string)` | system instruction | System-level instruction. |
 | `history(array)` | chat history | Conversation history array (role/parts structure). |
+| `historyFromModel($query, string $bodyColumn, string $roleColumn)` | Eloquent query | Build history from database rows. |
 | `structuredSchema(array)` | JSON Schema | Ask model to produce structured JSON (schema validation). |
-| `temperature(float)` | 0.0-1.0 | Sampling temperature. |
-| `maxTokens(int)` | token limit | Max tokens for generation. |
-| `safetySettings(array)` | array | Safety thresholds from config. |
-| `method(string)` | provider method | Override provider method name (e.g., `generateContent`). |
-| `upload(string $type, string $path)` | (type, local-file-path) | Attach a file (image/document/audio/video) to the request. |
-| `cache(array $tools = [], array $toolConfig = [], string $displayName = null, string $ttl = null, string $expireTime = null)` | optional params | Create a cache from current builder params and return cache name. |
+| `functionCalls(array)` | function declarations | Enable function calling. |
+| `temperature(float)` | 0.0-2.0 | Sampling temperature (model default when omitted). |
+| `maxTokens(int)` | token limit | Max output tokens (model default when omitted). |
+| `safetySettings(array)` | array | Override the safety thresholds from config. |
+| `method(string\|GenerationMethod)` | provider method | Override provider method (`generateContent`, `predict`, `predictLongRunning`). |
+| `upload(string $type, string $path)` | (type, local-file-path) | Attach a local file (image/document/audio/video) to the request. |
+| `file(string $mimeType, string $uri)` | (MIME type, file URI) | Attach an already-uploaded file. |
+| `cache(array $tools = [], array $toolConfig = [], ?string $displayName = null, ?string $ttl = null, ?string $expireTime = null)` | optional params | Create a cache from current builder params and return cache name. |
 | `getCache(string $name)` | cache name | Get details of a cached content. |
 | `cachedContent(string $name)` | cache name | Use a cached content for generation. |
 | `stream(callable)` | callback | Stream chunks (SSE / server events). |
@@ -196,9 +228,9 @@ return response()->stream(function () use ($request) {
     Gemini::text()
         ->model('gemini-2.5-flash')
         ->prompt('Tell a long story about artificial intelligence.')
-        ->stream(function ($chunk) {
-            $text = $chunk['text'] ?? '';
-            if (!empty(trim($text))) {
+        ->stream(function (array $part) {
+            $text = $part['text'] ?? '';
+            if (trim($text) !== '') {
                 echo "data: " . json_encode(['text' => $text]) . "\n\n";
                 ob_flush();
                 flush();
@@ -239,7 +271,19 @@ $response = Gemini::text()
     ->prompt('Return a JSON object with name and age.')
     ->generate();
 
-$json = $response->content(); // Parsable JSON matching the schema
+$json = $response->content(); // JSON string matching the schema
+$data = $response->decode();  // ['name' => ..., 'age' => ...]
+```
+
+**Pre-uploaded files**
+
+```php
+$uri = Gemini::files()->upload('video', storage_path('app/clip.mp4'));
+
+$response = Gemini::text()
+    ->file('video/mp4', $uri)
+    ->prompt('Describe this clip.')
+    ->generate();
 ```
 
 ---
@@ -284,10 +328,19 @@ Use for short or long-running video generation.
 | `cache(array $tools = [], array $toolConfig = [], string $displayName = null, string $ttl = null, string $expireTime = null)` | optional params | Create a cache from current builder params and return cache name. |
 | `getCache(string $name)` | cache name | Get details of a cached content. |
 | `cachedContent(string $name)` | cache name | Use a cached content for generation. |
-| `generate()` | — | Initiates video creation (may be long-running). |
-| `save($path)` | local path | Polls provider and saves final video file. |
+| `generate()` | — | Starts the job, polls until done and downloads the video. |
+| `save($path)` | local path | Save the downloaded video file. |
 
-**Note:** long-running video generation typically uses `predictLongRunning` or similar. The package abstracts polling & saving.
+```php
+$video = Gemini::video()
+    ->prompt('A drone shot over a misty forest at sunrise.')
+    ->generate();          // blocks while polling (see `long_running` config)
+
+$video->url();             // provider URI of the generated video
+$video->save(storage_path('app/forest.mp4'));
+```
+
+**Note:** long-running generation uses `predictLongRunning`. Run it in a queued job — polling can take minutes.
 
 ---
 
@@ -305,7 +358,26 @@ Use for TTS generation.
 | `getCache(string $name)` | cache name | Get details of a cached content. |
 | `cachedContent(string $name)` | cache name | Use a cached content for generation. |
 | `generate()` | — | Generate audio bytes. |
-| `save($path)` | local path | Save generated audio (wav/mp3). |
+| `save($path)` | local path | Save generated audio (raw PCM is wrapped as WAV). |
+
+```php
+// Single speaker
+Gemini::audio()
+    ->voiceName('Kore')
+    ->prompt('Say cheerfully: Have a wonderful day!')
+    ->generate()
+    ->save(storage_path('app/greeting.wav'));
+
+// Multiple speakers
+Gemini::audio()
+    ->speakerVoices([
+        ['speaker' => 'Joe', 'voiceName' => 'Kore'],
+        ['speaker' => 'Jane', 'voiceName' => 'Puck'],
+    ])
+    ->prompt("TTS the following conversation:\nJoe: How's it going?\nJane: Great, thanks!")
+    ->generate()
+    ->save(storage_path('app/dialogue.wav'));
+```
 
 ---
 
@@ -338,10 +410,10 @@ High level file manager for uploads used by the "understanding" endpoints.
 
 | Method | Args | Description |
 |---|---:|---|
-| `upload(string $type, string $localPath)` | `type` in `[document,image,video,audio]` | Upload a local file and return a provider `uri` or `file id`. |
-| `list()` | — | Return a list of uploaded files (metadata). |
-| `get(string $id)` | file id | Get file metadata (name, uri, state, mimeType, displayName). |
-| `delete(string $id)` | file id | Delete a previously uploaded file. |
+| `upload(string $type, string $localPath)` | `type` in `[document,image,video,audio]` | Upload a local file and return its `uri`. |
+| `list(array $params = [])` | `pageSize`, `pageToken` | Return a list of uploaded files (metadata). |
+| `get(string $id)` | `abc` or `files/abc` | Get file metadata (name, uri, state, mimeType, displayName). |
+| `delete(string $id)` | `abc` or `files/abc` | Delete a previously uploaded file. |
 
 **Files**
 
@@ -378,7 +450,7 @@ $success = Gemini::files()->delete($file_id);
 | video | webm | video/webm |
 | video | wmv | video/wmv |
 | video | 3gpp | video/3gpp |
-| audio | wav | audio/wav |
+| audio | wav | audio/x-wav |
 | audio | mp3 | audio/mp3 |
 | audio | aiff | audio/aiff |
 | audio | aac | audio/aac |
@@ -440,6 +512,7 @@ $success = Gemini::caches()->delete($cacheName);
 - `model()`: Returns the model used
 - `expireTime()`: Returns expiration
 - `usageMetadata()`: Returns usage metadata
+- `cachedContents()` / `nextPageToken()`: Results and cursor of a `list()` call
 - `toArray()`: Full response as array
 
 **Caching in Generation Builders**
@@ -481,7 +554,7 @@ The `stream` route uses `Content-Type: text/event-stream`. Connect from a browse
 
 ### Streaming behaviour
 
-- Implemented using SSE (Server-Sent Events). The stream yields chunks where each chunk is typically `['text' => '...']`.
+- Implemented using SSE (Server-Sent Events, `alt=sse`). The callback is invoked once per returned part, typically `['text' => '...']`.
 - Client should reconnect behaviorally for resilience and handle partial chunks.
 - Use response headers:
   - `Content-Type: text/event-stream`
@@ -511,9 +584,24 @@ The package includes helpful Artisan commands:
 
 ---
 
+## Testing
+
+```bash
+composer test
+```
+
+## Changelog
+
+See [CHANGELOG](CHANGELOG.md) for what has changed recently.
+
 ## Contributing
 
-Please see [CONTRIBUTING](CONTRIBUTING.md) for details.
+Please see [CONTRIBUTING](CONTRIBUTING.md) for details. Issues and pull requests: [github.com/siberfx/laravel-gemini](https://github.com/siberfx/laravel-gemini).
+
+## Credits
+
+- [Selim Görmüş (siberfx)](https://github.com/siberfx) — maintainer
+- Hossein Hezami — original author
 
 ## License
 

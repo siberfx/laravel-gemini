@@ -11,7 +11,7 @@ We welcome all kinds of contributions, including bug reports, feature requests, 
 - Click the **Fork** button on the top right of the repository page.
 - Clone your fork locally:
 ```bash
-git clone https://github.com/hosseinhezami/laravel-gemini.git
+git clone https://github.com/<your-username>/laravel-gemini.git
 cd laravel-gemini
 ````
 
@@ -36,12 +36,14 @@ git checkout -b feature/your-feature-name
 composer install
 ```
 
-### 4. Run Tests
+### 4. Check Your Changes
 
-* Make sure all tests pass before submitting your changes:
+* Make sure the tests and code style checks pass before submitting:
 
 ```bash
-php artisan test
+composer test         # PHPUnit (Orchestra Testbench)
+composer lint         # fix code style with Laravel Pint
+composer lint:check   # verify code style (runs in CI)
 ```
 * If you add new functionality, write corresponding tests.
 
@@ -63,7 +65,7 @@ git push origin feature/your-feature-name
 
 ### 7. Submit a Pull Request
 
-* Open a PR against the `master` branch.
+* Open a PR against the `main` branch of [siberfx/laravel-gemini](https://github.com/siberfx/laravel-gemini).
 * Clearly describe:
 
   * The purpose of your changes.

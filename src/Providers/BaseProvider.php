@@ -1,122 +1,111 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Siberfx\LaravelGemini\Providers;
 
+use Illuminate\Http\Client\Response;
+use Siberfx\LaravelGemini\Enums\FileType;
+use Siberfx\LaravelGemini\Exceptions\ApiException;
+use Siberfx\LaravelGemini\Exceptions\AuthenticationException;
+use Siberfx\LaravelGemini\Exceptions\NetworkException;
+use Siberfx\LaravelGemini\Exceptions\RateLimitException;
+use Siberfx\LaravelGemini\Exceptions\ValidationException;
 use Siberfx\LaravelGemini\Http\HttpClient;
-use Siberfx\LaravelGemini\Exceptions;
-use Illuminate\Support\Facades\Http;
 
 abstract class BaseProvider
 {
     protected HttpClient $http;
 
-    public function __construct(?string $apiKey = null)
-    {
+    public function __construct(
+        protected readonly array $config = [],
+        ?string $apiKey = null,
+    ) {
         $this->http = new HttpClient(apiKey: $apiKey);
     }
 
-    protected function handleResponse($response, string $type)
+    /**
+     * Throw a typed exception for failed responses, otherwise hydrate the given response class.
+     *
+     * @template T
+     *
+     * @param  class-string<T>  $responseClass
+     * @return T
+     */
+    protected function handleResponse(Response $response, string $responseClass): mixed
     {
-        if ($response->failed()) {
-            $status = $response->status();
-            if ($status === 401) {
-                throw new Exceptions\AuthenticationException();
-            } elseif ($status === 429) {
-                throw new Exceptions\RateLimitException(retryAfter: $response->header('Retry-After'));
-            } elseif ($status >= 500) {
-                throw new Exceptions\ApiException();
-            } elseif ($status === 400) {
-                throw new Exceptions\ValidationException();
-            } else {
-                throw new Exceptions\NetworkException();
-            }
+        $this->ensureSuccessful($response);
+
+        return new $responseClass($response->json() ?? []);
+    }
+
+    protected function ensureSuccessful(Response $response): void
+    {
+        if ($response->successful()) {
+            return;
         }
 
-        $data = $response->json();
+        $status = $response->status();
+        $message = $response->json('error.message') ?? "Gemini API request failed with status {$status}";
+        $retryAfter = $response->header('Retry-After');
 
-        return new ("HosseinHezami\\LaravelGemini\\Responses\\" . $type . "Response")($data);
+        throw match (true) {
+            $status === 400 => new ValidationException($message, $status),
+            $status === 401, $status === 403 => new AuthenticationException($message, $status),
+            $status === 429 => new RateLimitException($message, is_numeric($retryAfter) ? (int) $retryAfter : null),
+            $status >= 500 => new ApiException($message, $status),
+            default => new NetworkException($message, $status),
+        };
     }
 
     /**
-     * Upload a file to Gemini API and return its URI.
+     * Upload a file to the Gemini Files API and return its URI.
      *
-     * @param string $fileType Type of file (e.g., 'image', 'video', 'audio', 'document')
-     * @param string $filePath Path to the file
-     * @return string File URI returned by the API
-     * @throws Exceptions\ValidationException If file type is invalid or file not found
-     * @throws Exceptions\ApiException
-     * @throws Exceptions\RateLimitException
+     * @throws ValidationException
+     * @throws ApiException
      */
     protected function upload(string $fileType, string $filePath): string
     {
-        if (!file_exists($filePath) || !is_readable($filePath)) {
-            throw new Exceptions\ValidationException("File does not exist or is not readable: {$filePath}");
+        if (! is_file($filePath) || ! is_readable($filePath)) {
+            throw new ValidationException("File does not exist or is not readable: {$filePath}");
         }
 
-        $validTypes = ['image', 'video', 'audio', 'document'];
-        if (!in_array($fileType, $validTypes)) {
-            throw new Exceptions\ValidationException("Invalid file type: {$fileType}. Allowed types: " . implode(', ', $validTypes));
-        }
-
-        $mimeType = $this->getMimeType($fileType, $filePath);
+        $mimeType = FileType::fromString($fileType)->mimeTypeFor($filePath);
         $fileSize = filesize($filePath);
-        $displayName = basename($filePath);
 
-        /**
-         * Step 1: Initiate resumable upload session
-         */
-        $initialResponse = $this->http
+        // Step 1: start a resumable upload session.
+        $session = $this->http
             ->withHeaders([
-                'Content-Type' => 'application/json',
+                'X-Goog-Upload-Protocol' => 'resumable',
+                'X-Goog-Upload-Command' => 'start',
+                'X-Goog-Upload-Header-Content-Length' => (string) $fileSize,
+                'X-Goog-Upload-Header-Content-Type' => $mimeType,
             ])
-            ->post('/upload/v1beta/files?uploadType=resumable', [
-                'file' => [
-                    'display_name' => $displayName,
-                ],
+            ->post('/upload/v1beta/files', [
+                'file' => ['display_name' => basename($filePath)],
             ]);
 
-        $uploadUrl = $initialResponse->header('Location');
+        $this->ensureSuccessful($session);
 
-        if (!$uploadUrl) {
-            throw new Exceptions\ApiException('Upload URL not received from API');
-        }
+        $uploadUrl = $session->header('X-Goog-Upload-URL') ?: $session->header('Location')
+            ?: throw new ApiException('Upload URL not received from API');
 
-        /**
-         * Step 2: Upload the entire file in a single chunk and finalize
-         */
-        $uploadResponse = $this->http
+        // Step 2: upload the whole file in a single chunk and finalize.
+        $upload = $this->http
             ->withHeaders([
-                'Content-Range' => "bytes 0-" . ($fileSize - 1) . "/$fileSize",
+                'X-Goog-Upload-Offset' => '0',
+                'X-Goog-Upload-Command' => 'upload, finalize',
             ])
-            ->withBody(
-                file_get_contents($filePath),
-                $mimeType
-            )
+            ->withBody(file_get_contents($filePath), $mimeType)
             ->post($uploadUrl);
 
-        if (!$uploadResponse->successful()) {
-            throw new Exceptions\ApiException('Upload failed: ' . $uploadResponse->body());
-        }
+        $this->ensureSuccessful($upload);
 
-        $json = $uploadResponse->json();
-
-        if (!isset($json['file']['uri'])) {
-            throw new Exceptions\ApiException('File URI not found in API response');
-        }
-
-        return $json['file']['uri'];
+        return $upload->json('file.uri') ?? throw new ApiException('File URI not found in API response');
     }
 
     protected function getMimeType(string $fileType, string $filePath): string
     {
-        $mimeTypes = [
-            'image' => ['png' => 'image/png', 'jpeg' => 'image/jpeg', 'jpg' => 'image/jpeg', 'webp' => 'image/webp', 'heic' => 'image/heic', 'heif' => 'image/heif'],
-            'video' => ['mp4' => 'video/mp4', 'mpeg' => 'video/mpeg', 'mov' => 'video/mov', 'avi' => 'video/avi', 'flv' => 'video/x-flv', 'mpg' => 'video/mpg', 'webm' => 'video/webm', 'wmv' => 'video/wmv', '3gpp' => 'video/3gpp'],
-            'audio' => ['wav' => 'audio/x-wav', 'mp3' => 'audio/mp3', 'aiff' => 'audio/aiff', 'aac' => 'audio/aac', 'ogg' => 'audio/ogg', 'flac' => 'audio/flac'],
-            'document' => ['pdf' => 'application/pdf', 'txt' => 'text/plain', 'md' => 'text/markdown']
-        ];
-
-        $extension = strtolower(pathinfo($filePath, PATHINFO_EXTENSION));
-        return $mimeTypes[$fileType][$extension] ?? throw new Exceptions\ValidationException("Unsupported {$fileType} format: {$extension}");
+        return FileType::fromString($fileType)->mimeTypeFor($filePath);
     }
 }

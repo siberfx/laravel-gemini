@@ -1,9 +1,11 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Siberfx\LaravelGemini\Console;
 
 use Illuminate\Console\Command;
-use Siberfx\LaravelGemini\Facades\Gemini;
+use Siberfx\LaravelGemini\Gemini;
 
 class ModelsCommand extends Command
 {
@@ -11,17 +13,17 @@ class ModelsCommand extends Command
 
     protected $description = 'List available Gemini models';
 
-    public function handle(): void
+    public function handle(Gemini $gemini): int
     {
-        $models = Gemini::models();
-        $tableData = array_map(function ($model) {
-            return [
-                $model['name'],
-                $model['displayName'],
-                $model['version'] ?? 'N/A',
-                implode(', ', $model['supportedGenerationMethods'] ?? []),
-            ];
-        }, $models);
-        $this->table(['Model', 'Name', 'Version', 'Capabilities'], $tableData);
+        $rows = array_map(static fn (array $model): array => [
+            $model['name'],
+            $model['displayName'] ?? 'N/A',
+            $model['version'] ?? 'N/A',
+            implode(', ', $model['supportedGenerationMethods'] ?? []),
+        ], $gemini->models());
+
+        $this->table(['Model', 'Name', 'Version', 'Capabilities'], $rows);
+
+        return self::SUCCESS;
     }
 }

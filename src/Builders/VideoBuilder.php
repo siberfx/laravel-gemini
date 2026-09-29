@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Siberfx\LaravelGemini\Builders;
 
 use Siberfx\LaravelGemini\Enums\Capability;
@@ -7,9 +9,9 @@ use Siberfx\LaravelGemini\Responses\VideoResponse;
 
 class VideoBuilder extends BaseBuilder
 {
-    protected function getCapability(): string
+    protected function capability(): Capability
     {
-        return Capability::VIDEO->value;
+        return Capability::VIDEO;
     }
 
     public function generate(): VideoResponse

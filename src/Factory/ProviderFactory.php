@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Siberfx\LaravelGemini\Factory;
 
 use Siberfx\LaravelGemini\Contracts\ProviderInterface;
@@ -9,16 +11,15 @@ class ProviderFactory
 {
     public function create(?string $alias = null, ?string $apiKey = null): ProviderInterface
     {
-        $alias = $alias ?: config('gemini.default_provider');
+        $alias ??= config('gemini.default_provider');
+        $config = config("gemini.providers.{$alias}");
 
-        $providerConfig = config('gemini.providers.' . $alias);
+        $class = $config['class'] ?? null;
 
-        if (!$providerConfig || !isset($providerConfig['class'])) {
-            throw new ValidationException("Unknown provider: $alias");
+        if (! is_string($class) || ! is_subclass_of($class, ProviderInterface::class)) {
+            throw new ValidationException("Unknown or invalid provider: {$alias}");
         }
 
-        $class = $providerConfig['class'];
-
-        return new $class($providerConfig, $apiKey);
+        return new $class($config, $apiKey);
     }
 }

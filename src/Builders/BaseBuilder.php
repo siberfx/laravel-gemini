@@ -1,175 +1,199 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Siberfx\LaravelGemini\Builders;
 
+use Illuminate\Contracts\Database\Query\Builder;
 use Siberfx\LaravelGemini\Contracts\ProviderInterface;
+use Siberfx\LaravelGemini\Enums\Capability;
+use Siberfx\LaravelGemini\Enums\GenerationMethod;
 use Siberfx\LaravelGemini\Exceptions\ValidationException;
+use Siberfx\LaravelGemini\Responses\BaseResponse;
 use Siberfx\LaravelGemini\Responses\CacheResponse;
 
 abstract class BaseBuilder
 {
-    protected ProviderInterface $provider;
-
     protected array $params = [];
 
-    public function __construct(ProviderInterface $provider)
-    {
-        $this->provider = $provider;
-        $this->params['capability'] = $this->getCapability();
-        $this->params['defaultProvider'] = config('gemini.default_provider');
-        $this->params['model'] = config('gemini.providers.' . $this->params['defaultProvider'] . '.models.' . $this->params['capability']);
-        $this->params['method'] = config('gemini.providers.' . $this->params['defaultProvider'] . '.methods.' . $this->params['capability']);
-        if (empty($this->params['model'])) {
-            throw new ValidationException("Default model for {$this->params['capability']} not found in configuration.");
-        }
-        if (empty($this->params['method'])) {
-            throw new ValidationException("Default method for {$this->params['capability']} not found in configuration.");
-        }
+    public function __construct(
+        protected readonly ProviderInterface $provider,
+    ) {
+        $capability = $this->capability()->value;
+        $provider = config('gemini.default_provider');
+
+        $this->params = [
+            'capability' => $capability,
+            'defaultProvider' => $provider,
+            'model' => config("gemini.providers.{$provider}.models.{$capability}")
+                ?: throw new ValidationException("Default model for {$capability} not found in configuration."),
+            'method' => config("gemini.providers.{$provider}.methods.{$capability}")
+                ?: throw new ValidationException("Default method for {$capability} not found in configuration."),
+        ];
     }
 
-    abstract protected function getCapability(): string;
+    abstract protected function capability(): Capability;
 
-    public function model(string $model = null): self
+    abstract public function generate(): BaseResponse;
+
+    public function model(?string $model = null): static
     {
         $this->params['model'] = $model ?? $this->params['model'];
+
         return $this;
     }
 
-    public function method(string $method): self
+    public function method(string|GenerationMethod $method): static
     {
-        if (!in_array($method, ['generateContent', 'predict', 'predictLongRunning'])) {
-            throw new ValidationException("Invalid method: {$method}. Supported: generateContent, predict, predictLongRunning.");
-        }
-        $this->params['method'] = $method ?? $this->params['method'];
+        $method = $method instanceof GenerationMethod
+            ? $method
+            : GenerationMethod::tryFrom($method) ?? throw new ValidationException(
+                "Invalid method: {$method}. Supported: ".implode(', ', GenerationMethod::values()).'.'
+            );
+
+        $this->params['method'] = $method->value;
+
         return $this;
     }
 
-    public function prompt(string $prompt): self
+    public function prompt(string $prompt): static
     {
-        $this->params['prompt'] = $prompt;
-        return $this;
+        return $this->set('prompt', $prompt);
     }
 
-    public function system(string $system): self
+    public function system(string $system): static
     {
-        $this->params['system'] = $system;
-        return $this;
+        return $this->set('system', $system);
     }
 
-    public function history(array $history): self
+    public function history(array $history): static
     {
-        $this->params['history'] = $history;
-        return $this;
+        return $this->set('history', $history);
     }
 
-    public function historyFromModel($query, $bodyColumn, $roleColumn): self
+    /**
+     * Build the history from an Eloquent query / relation.
+     *
+     * @param  Builder  $query
+     */
+    public function historyFromModel(mixed $query, string $bodyColumn, string $roleColumn): static
     {
-        $history = $query->get()->map(function ($item) use ($bodyColumn, $roleColumn) {
-            return ['role' => $item->{$roleColumn}, 'parts' => [['text' => $item->{$bodyColumn}]]];
-        })->toArray();
-        return $this->history($history);
+        return $this->history(
+            $query->get()
+                ->map(static fn (object $item): array => [
+                    'role' => $item->{$roleColumn},
+                    'parts' => [['text' => $item->{$bodyColumn}]],
+                ])
+                ->all()
+        );
     }
 
-    public function temperature(float $value): self
+    public function temperature(float $value): static
     {
-        $this->params['temperature'] = $value;
-        return $this;
+        return $this->set('temperature', $value);
     }
 
-    public function maxTokens(int $value): self
+    public function maxTokens(int $value): static
     {
-        $this->params['maxTokens'] = $value;
-        return $this;
+        return $this->set('maxTokens', $value);
     }
 
-    public function safetySettings(array $settings): self
+    public function safetySettings(array $settings): static
     {
-        $this->params['safetySettings'] = $settings;
-        return $this;
+        return $this->set('safetySettings', $settings);
     }
 
-    public function functionCalls(array $functions): self
+    public function functionCalls(array $functions): static
     {
-        $this->params['functions'] = $functions;
-        return $this;
+        return $this->set('functions', $functions);
     }
 
-    public function structuredSchema(array $schema): self
+    public function structuredSchema(array $schema): static
     {
-        $this->params['structuredSchema'] = $schema;
-        return $this;
+        return $this->set('structuredSchema', $schema);
     }
 
-    public function upload(string $fileType, string $filePath): self
+    /**
+     * Attach a local file; images are inlined, other types are uploaded to the Files API.
+     */
+    public function upload(string $fileType, string $filePath): static
     {
         $this->params['fileType'] = $fileType;
         $this->params['filePath'] = $filePath;
+
         return $this;
     }
 
-    public function file(string $fileType, string $fileUri): self
+    /**
+     * Attach an already-uploaded file by URI.
+     */
+    public function file(string $mimeType, string $fileUri): static
     {
-        $this->params['fileType'] = $fileType;
+        $this->params['fileType'] = $mimeType;
         $this->params['fileUri'] = $fileUri;
+
         return $this;
     }
 
+    /**
+     * Create a cached content from the current prompt / history / system and return its name.
+     */
     public function cache(
-        ?array $tools = [],
-        ?array $toolConfig = [],
+        array $tools = [],
+        array $toolConfig = [],
         ?string $displayName = null,
         ?string $ttl = null,
-        ?string $expireTime = null
+        ?string $expireTime = null,
     ): string {
-        // Build contents from existing params (like prompt, history)
-        $contents = [];
-        if (isset($this->params['history'])) {
-            $contents = array_merge($contents, $this->params['history']);
-        }
+        $contents = $this->params['history'] ?? [];
+
         if (isset($this->params['prompt'])) {
             $contents[] = ['role' => 'user', 'parts' => [['text' => $this->params['prompt']]]];
         }
 
-        // Use system if set
-        $systemInstruction = isset($this->params['system']) ? $this->params['system'] : null;
-
-        // Prepare params for provider
-        $cacheParams = [
+        return $this->provider->createCachedContent([
             'model' => $this->params['model'],
             'contents' => $contents,
-            'systemInstruction' => $systemInstruction,
+            'systemInstruction' => $this->params['system'] ?? null,
             'tools' => $tools,
             'toolConfig' => $toolConfig,
             'displayName' => $displayName,
             'ttl' => $ttl ?? config('gemini.caching.default_ttl'),
             'expireTime' => $expireTime,
-        ];
-
-        // Call provider to create
-        $response = $this->provider->createCachedContent($cacheParams);
-
-        // Return the cache name for chaining or use
-        return $response->name();
+        ])->name();
     }
 
     public function getCache(string $name): CacheResponse
     {
-        if (empty($name)) {
+        if (blank($name)) {
             throw new ValidationException('Cache name is required.');
         }
+
         return $this->provider->getCachedContent($name);
     }
 
-    public function cachedContent(string $name): self
+    public function cachedContent(string $name): static
     {
-        $this->params['cachedContent'] = $name;
-        return $this;
+        return $this->set('cachedContent', $name);
     }
 
-    abstract public function generate();
-
+    /**
+     * @param  callable(array $part): void  $callback
+     */
     public function stream(callable $callback): void
     {
         $this->provider->streaming($this->params, $callback);
+    }
+
+    public function toArray(): array
+    {
+        return $this->params;
+    }
+
+    protected function set(string $key, mixed $value): static
+    {
+        $this->params[$key] = $value;
+
+        return $this;
     }
 }

@@ -1,29 +1,30 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Siberfx\LaravelGemini;
 
-use Siberfx\LaravelGemini\Builders\TextBuilder;
-use Siberfx\LaravelGemini\Builders\ImageBuilder;
-use Siberfx\LaravelGemini\Builders\VideoBuilder;
 use Siberfx\LaravelGemini\Builders\AudioBuilder;
-use Siberfx\LaravelGemini\Builders\FileBuilder;
 use Siberfx\LaravelGemini\Builders\CacheBuilder;
+use Siberfx\LaravelGemini\Builders\FileBuilder;
+use Siberfx\LaravelGemini\Builders\ImageBuilder;
+use Siberfx\LaravelGemini\Builders\TextBuilder;
+use Siberfx\LaravelGemini\Builders\VideoBuilder;
+use Siberfx\LaravelGemini\Contracts\ProviderInterface;
 use Siberfx\LaravelGemini\Factory\ProviderFactory;
 
 class Gemini
 {
-    protected ProviderFactory $factory;
-
     protected ?string $apiKey = null;
 
-    public function __construct(ProviderFactory $factory)
-    {
-        $this->factory = $factory;
-    }
+    public function __construct(
+        protected readonly ProviderFactory $factory,
+    ) {}
 
-    public function setApiKey(string $apiKey): self
+    public function setApiKey(string $apiKey): static
     {
         $this->apiKey = $apiKey;
+
         return $this;
     }
 
@@ -57,7 +58,7 @@ class Gemini
         return new CacheBuilder($this->getProvider());
     }
 
-    public function models()
+    public function models(): array
     {
         return $this->getProvider()->models();
     }
@@ -67,7 +68,7 @@ class Gemini
         return $this->getProvider()->embeddings($params);
     }
 
-    public function getProvider(?string $alias = null)
+    public function getProvider(?string $alias = null): ProviderInterface
     {
         return $this->factory->create($alias, $this->apiKey);
     }

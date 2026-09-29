@@ -1,20 +1,19 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Siberfx\LaravelGemini\Responses;
 
-class CacheResponse
+use Illuminate\Contracts\Support\Arrayable;
+use JsonSerializable;
+use Siberfx\LaravelGemini\Responses\Concerns\InteractsWithData;
+
+/**
+ * @implements Arrayable<string, mixed>
+ */
+class CacheResponse implements Arrayable, JsonSerializable
 {
-    protected array $data;
-
-    public function __construct(array $data)
-    {
-        $this->data = $data;
-    }
-
-    public function toArray(): array
-    {
-        return $this->data;
-    }
+    use InteractsWithData;
 
     public function name(): string
     {
@@ -49,5 +48,18 @@ class CacheResponse
     public function usageMetadata(): array
     {
         return $this->data['usageMetadata'] ?? [];
+    }
+
+    /**
+     * Cached contents returned by a list call.
+     */
+    public function cachedContents(): array
+    {
+        return $this->data['cachedContents'] ?? [];
+    }
+
+    public function nextPageToken(): ?string
+    {
+        return $this->data['nextPageToken'] ?? null;
     }
 }

@@ -1,5 +1,9 @@
 <?php
 
+declare(strict_types=1);
+
+use Siberfx\LaravelGemini\Providers\GeminiProvider;
+
 return [
 
     /*
@@ -48,7 +52,7 @@ return [
 
     'providers' => [
         'gemini' => [
-            'class' => \Siberfx\LaravelGemini\Providers\GeminiProvider::class,
+            'class' => GeminiProvider::class,
             'models' => [
                 'text' => 'gemini-2.5-flash-lite',
                 'image' => 'gemini-2.5-flash-image-preview',
@@ -62,14 +66,9 @@ return [
                 'video' => 'predictLongRunning',
                 'audio' => 'generateContent',
             ],
-            /**
-             * Set voice name for single-speaker TTS.
-             * @param string $voiceName e.g., 'Kore', 'Puck'
-             * Set speaker voices for multi-speaker TTS.
-             * @param array $speakerVoices e.g., [['speaker' => 'Joe', 'voiceName' => 'Kore'], ['speaker' => 'Jane', 'voiceName' => 'Puck']]
-             */
+            // Fallback voice for single-speaker TTS when ->voiceName() is not called.
             'default_speech_config' => [
-                'voiceName' => 'Kore'
+                'voiceName' => 'Kore',
             ],
         ],
     ],
@@ -83,20 +82,21 @@ return [
     |
     */
 
-    'timeout' => env('GEMINI_TIMEOUT', 30),
+    'timeout' => (int) env('GEMINI_TIMEOUT', 30),
 
     /*
     |--------------------------------------------------------------------------
     | Retry Policy
     |--------------------------------------------------------------------------
     |
-    | Configuration for retrying failed requests.
+    | Retries apply to connection errors, 429 and 5xx responses. On 429 the
+    | Retry-After header takes precedence over the configured delay.
     |
     */
 
     'retry_policy' => [
-        'max_retries' => env('GEMINI_MAX_RETRIES', 30),
-        'retry_delay' => env('GEMINI_RETRY_DELAY', 1000), // milliseconds
+        'max_retries' => (int) env('GEMINI_MAX_RETRIES', 3),
+        'retry_delay' => (int) env('GEMINI_RETRY_DELAY', 1000), // milliseconds
     ],
 
     /*
@@ -109,22 +109,10 @@ return [
     */
 
     'safety_settings' => [
-        [
-            'category' => 'HARM_CATEGORY_HARASSMENT',
-            'threshold' => 'BLOCK_MEDIUM_AND_ABOVE'
-        ],
-        [
-            'category' => 'HARM_CATEGORY_HATE_SPEECH',
-            'threshold' => 'BLOCK_MEDIUM_AND_ABOVE'
-        ],
-        [
-            'category' => 'HARM_CATEGORY_SEXUALLY_EXPLICIT',
-            'threshold' => 'BLOCK_MEDIUM_AND_ABOVE'
-        ],
-        [
-            'category' => 'HARM_CATEGORY_DANGEROUS_CONTENT',
-            'threshold' => 'BLOCK_MEDIUM_AND_ABOVE'
-        ],
+        ['category' => 'HARM_CATEGORY_HARASSMENT', 'threshold' => 'BLOCK_MEDIUM_AND_ABOVE'],
+        ['category' => 'HARM_CATEGORY_HATE_SPEECH', 'threshold' => 'BLOCK_MEDIUM_AND_ABOVE'],
+        ['category' => 'HARM_CATEGORY_SEXUALLY_EXPLICIT', 'threshold' => 'BLOCK_MEDIUM_AND_ABOVE'],
+        ['category' => 'HARM_CATEGORY_DANGEROUS_CONTENT', 'threshold' => 'BLOCK_MEDIUM_AND_ABOVE'],
     ],
 
     /*
@@ -136,7 +124,7 @@ return [
     |
     */
 
-    'logging' => env('GEMINI_LOGGING', false),
+    'logging' => (bool) env('GEMINI_LOGGING', false),
 
     /*
     |--------------------------------------------------------------------------
@@ -148,8 +136,8 @@ return [
     */
 
     'stream' => [
-        'chunk_size' => env('GEMINI_STREAM_CHUNK_SIZE', 1024),
-        'timeout' => env('GEMINI_STREAM_TIMEOUT', 1000),
+        'chunk_size' => (int) env('GEMINI_STREAM_CHUNK_SIZE', 1024),
+        'timeout' => (int) env('GEMINI_STREAM_TIMEOUT', 1000),
     ],
 
     /*
@@ -157,13 +145,27 @@ return [
     | Caching Configuration
     |--------------------------------------------------------------------------
     |
-    | Cache Configuration.
+    | Defaults for the context caching API.
     |
     */
 
     'caching' => [
-        'default_ttl' => '3600s', // Default expiration TTL (e.g., '300s', '1h')
+        'default_ttl' => env('GEMINI_CACHE_TTL', '3600s'), // e.g. '300s'
         'max_page_size' => 50, // Default page size for listing caches
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Long-Running Operations
+    |--------------------------------------------------------------------------
+    |
+    | Polling settings for predictLongRunning requests (e.g. Veo video).
+    |
+    */
+
+    'long_running' => [
+        'poll_interval' => (int) env('GEMINI_POLL_INTERVAL', 5), // seconds
+        'timeout' => (int) env('GEMINI_POLL_TIMEOUT', 600), // seconds
     ],
 
 ];

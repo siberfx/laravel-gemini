@@ -1,26 +1,28 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Siberfx\LaravelGemini\Responses;
 
-use Siberfx\LaravelGemini\Exceptions\ApiException;
+use Illuminate\Contracts\Support\Arrayable;
+use JsonSerializable;
+use Siberfx\LaravelGemini\Responses\Concerns\InteractsWithData;
 
-class FileResponse
+/**
+ * @implements Arrayable<string, mixed>
+ */
+class FileResponse implements Arrayable, JsonSerializable
 {
-    protected array $data;
-
-    public function __construct(array $data)
-    {
-        $this->data = $data;
-    }
-
-    public function toArray(): array
-    {
-        return $this->data;
-    }
+    use InteractsWithData;
 
     public function files(): array
     {
         return $this->data['files'] ?? [];
+    }
+
+    public function nextPageToken(): ?string
+    {
+        return $this->data['nextPageToken'] ?? null;
     }
 
     public function name(): ?string

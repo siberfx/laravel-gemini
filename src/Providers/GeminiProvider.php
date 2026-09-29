@@ -1,381 +1,417 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Siberfx\LaravelGemini\Providers;
 
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Sleep;
 use Siberfx\LaravelGemini\Contracts\ProviderInterface;
-use Siberfx\LaravelGemini\Responses;
+use Siberfx\LaravelGemini\Enums\GenerationMethod;
 use Siberfx\LaravelGemini\Exceptions\ApiException;
 use Siberfx\LaravelGemini\Exceptions\StreamException;
-use Siberfx\LaravelGemini\Exceptions\RateLimitException;
 use Siberfx\LaravelGemini\Exceptions\ValidationException;
-use Illuminate\Support\Facades\Log;
+use Siberfx\LaravelGemini\Responses\AudioResponse;
+use Siberfx\LaravelGemini\Responses\BaseResponse;
+use Siberfx\LaravelGemini\Responses\CacheResponse;
+use Siberfx\LaravelGemini\Responses\FileResponse;
+use Siberfx\LaravelGemini\Responses\ImageResponse;
+use Siberfx\LaravelGemini\Responses\TextResponse;
+use Siberfx\LaravelGemini\Responses\VideoResponse;
+use Throwable;
 
 class GeminiProvider extends BaseProvider implements ProviderInterface
 {
-    public function __construct(array $config = [], ?string $apiKey = null)
+    protected const string API_VERSION = '/v1beta';
+
+    public function generateText(array $params): TextResponse
     {
-        parent::__construct($apiKey);
+        return $this->executeRequest($params, TextResponse::class);
     }
 
-    public function generateText(array $params): Responses\TextResponse
+    public function generateImage(array $params): ImageResponse
     {
-        return $this->executeRequest($params, 'Text');
+        return $this->executeRequest($params, ImageResponse::class);
     }
 
-    public function generateImage(array $params): Responses\ImageResponse
+    public function generateVideo(array $params): VideoResponse
     {
-        return $this->executeRequest($params, 'Image');
+        return $this->executeRequest($params, VideoResponse::class);
     }
 
-    public function generateVideo(array $params): Responses\VideoResponse
+    public function generateAudio(array $params): AudioResponse
     {
-        return $this->executeRequest($params, 'Video');
-    }
-
-    public function generateAudio(array $params): Responses\AudioResponse
-    {
-        return $this->executeRequest($params, 'Audio');
+        return $this->executeRequest($params, AudioResponse::class, forAudio: true);
     }
 
     public function embeddings(array $params): array
     {
-        $response = $this->http->post("/v1beta/models/{$params['model']}:embedContent", $params);
+        $model = $params['model'] ?? $this->config['models']['embedding'] ?? 'gemini-embedding-001';
+        $model = str_starts_with($model, 'models/') ? substr($model, 7) : $model;
+
+        $response = $this->http->post(
+            self::API_VERSION."/models/{$model}:embedContent",
+            [...$params, 'model' => "models/{$model}"],
+        );
+
+        $this->ensureSuccessful($response);
+
         return $response->json();
     }
 
     public function uploadFile(array $params): string
     {
-        if (!isset($params['fileType']) || !isset($params['filePath'])) {
+        if (! isset($params['fileType'], $params['filePath'])) {
             throw new ValidationException('File type and path are required.');
         }
+
         return $this->upload($params['fileType'], $params['filePath']);
     }
 
-    public function listFiles(array $params = []): Responses\FileResponse
+    public function listFiles(array $params = []): FileResponse
     {
-        try {
-            $response = $this->http->get('/v1beta/files');
-            return $this->handleResponse($response, 'File');
-        } catch (\Exception $e) {
-            throw new ApiException("Get files list error: {$e->getMessage()}");
-        }
+        $query = array_filter([
+            'pageSize' => $params['pageSize'] ?? null,
+            'pageToken' => $params['pageToken'] ?? null,
+        ]);
+
+        return $this->handleResponse($this->http->get(self::API_VERSION.'/files', $query), FileResponse::class);
     }
 
-    public function getFile(string $fileName): Responses\FileResponse
+    public function getFile(string $fileName): FileResponse
     {
-        if (empty($fileName)) {
-            throw new ValidationException('File name is required.');
-        }
-
-        try {
-            $response = $this->http->get("/v1beta/files/{$fileName}");
-            return $this->handleResponse($response, 'File');
-        } catch (\Exception $e) {
-            throw new ApiException("Get file error: {$e->getMessage()}");
-        }
+        return $this->handleResponse(
+            $this->http->get(self::API_VERSION.'/'.$this->resourceName('files', $fileName)),
+            FileResponse::class,
+        );
     }
 
     public function deleteFile(string $fileName): bool
     {
-        if (empty($fileName)) {
-            throw new ValidationException('File name is required.');
-        }
-
-        try {
-            $response = $this->http->delete("/v1beta/files/{$fileName}");
-            return $response->successful();
-        } catch (\Exception $e) {
-            throw new ApiException("Delete file error: {$e->getMessage()}");
-        }
+        return $this->http->delete(self::API_VERSION.'/'.$this->resourceName('files', $fileName))->successful();
     }
 
-    // Create cached content
-    public function createCachedContent(array $params): Responses\CacheResponse
+    public function createCachedContent(array $params): CacheResponse
     {
-        $payload = [
+        $payload = array_filter([
             'model' => "models/{$params['model']}",
             'contents' => $params['contents'],
-        ];
+            'systemInstruction' => filled($params['systemInstruction'] ?? null)
+                ? ['parts' => [['text' => $params['systemInstruction']]]]
+                : null,
+            'tools' => $params['tools'] ?? null,
+            'toolConfig' => $params['toolConfig'] ?? null,
+            'displayName' => $params['displayName'] ?? null,
+            ...$this->expiration($params),
+        ], filled(...));
 
-        if (!empty($params['systemInstruction'])) {
-            $payload['systemInstruction'] = ['parts' => [['text' => $params['systemInstruction']]]];
-        }
-        if (!empty($params['tools'])) {
-            $payload['tools'] = $params['tools'];
-        }
-        if (!empty($params['toolConfig'])) {
-            $payload['toolConfig'] = $params['toolConfig'];
-        }
-        if (!empty($params['displayName'])) {
-            $payload['displayName'] = $params['displayName'];
-        }
-
-        if (!empty($params['expireTime'])) {
-            $payload['expireTime'] = $params['expireTime'];
-        } elseif (!empty($params['ttl'])) {
-            $payload['ttl'] = $params['ttl'] ?? config('gemini.caching.default_ttl');
-        }
-
-        try {
-            $response = $this->http->post('/v1beta/cachedContents', $payload);
-            return $this->handleResponse($response, 'Cache');
-        } catch (\Exception $e) {
-            throw new ApiException("Create cache error: {$e->getMessage()}");
-        }
+        return $this->handleResponse(
+            $this->http->post(self::API_VERSION.'/cachedContents', $payload),
+            CacheResponse::class,
+        );
     }
 
-    // List cached contents
-    public function listCachedContents(array $params = []): Responses\CacheResponse
+    public function listCachedContents(array $params = []): CacheResponse
     {
-        $queryParams = http_build_query(array_filter([
-            'pageSize' => $params['pageSize'] ?? config('gemini.caching.default_page_size'),
+        $query = array_filter([
+            'pageSize' => $params['pageSize'] ?? config('gemini.caching.max_page_size'),
             'pageToken' => $params['pageToken'] ?? null,
-        ]));
+        ]);
 
-        try {
-            $response = $this->http->get("/v1beta/cachedContents?{$queryParams}");
-            return $this->handleResponse($response, 'Cache');
-        } catch (\Exception $e) {
-            throw new ApiException("List caches error: {$e->getMessage()}");
-        }
+        return $this->handleResponse(
+            $this->http->get(self::API_VERSION.'/cachedContents', $query),
+            CacheResponse::class,
+        );
     }
 
-    // Get cached content
-    public function getCachedContent(string $name): Responses\CacheResponse
+    public function getCachedContent(string $name): CacheResponse
     {
-        try {
-            $response = $this->http->get("/v1beta/$name");
-            return $this->handleResponse($response, 'Cache');
-        } catch (\Exception $e) {
-            throw new ApiException("Get cache error: {$e->getMessage()}");
-        }
+        return $this->handleResponse(
+            $this->http->get(self::API_VERSION.'/'.$this->resourceName('cachedContents', $name)),
+            CacheResponse::class,
+        );
     }
 
-    // Update cached content (expiration only)
-    public function updateCachedContent(string $name, array $expiration): Responses\CacheResponse
+    public function updateCachedContent(string $name, array $expiration): CacheResponse
     {
-        $payload = [];
+        $payload = $this->expiration($expiration, withDefault: false)
+            ?: throw new ValidationException('TTL or expireTime is required for update.');
 
-        if (!empty($expiration['ttl']) || !empty($expiration['expireTime'])) {
-            $payload = [];
-            if (!empty($expiration['expireTime'])) {
-                $payload['expireTime'] = $expiration['expireTime'];
-            } elseif (!empty($expiration['ttl'])) {
-                $payload['ttl'] = $expiration['ttl'];
-            } else {
-                $payload['ttl'] = config('gemini.caching.default_ttl');
-            }
-        } else {
-            throw new ValidationException('TTL or expireTime is required for update.');
-        }
-
-        try {
-            $response = $this->http->patch("/v1beta/{$name}", $payload);
-            return $this->handleResponse($response, 'Cache');
-        } catch (\Exception $e) {
-            throw new ApiException("Update cache error: {$e->getMessage()}");
-        }
+        return $this->handleResponse(
+            $this->http->patch(self::API_VERSION.'/'.$this->resourceName('cachedContents', $name), $payload),
+            CacheResponse::class,
+        );
     }
 
-    // Delete cached content
     public function deleteCachedContent(string $name): bool
     {
-        try {
-            $response = $this->http->delete("/v1beta/$name");
-            return $response->successful();
-        } catch (\Exception $e) {
-            throw new ApiException("Delete cache error: {$e->getMessage()}");
-        }
+        return $this->http->delete(self::API_VERSION.'/'.$this->resourceName('cachedContents', $name))->successful();
     }
 
     public function models(): array
     {
-        $response = $this->http->get('/v1beta/models');
-        return $response->json()['models'];
+        $response = $this->http->get(self::API_VERSION.'/models', ['pageSize' => 1000]);
+
+        $this->ensureSuccessful($response);
+
+        return $response->json('models', []);
     }
 
+    /**
+     * Stream a generateContent request over SSE, invoking the callback for every returned part.
+     *
+     * @param  callable(array $part): void  $callback
+     */
     public function streaming(array $params, callable $callback): void
     {
-        $method = $params['method'] ?? 'generateContent';
-        if ($method !== 'generateContent') {
+        if ($this->method($params) !== GenerationMethod::GENERATE_CONTENT) {
             throw new ValidationException('Streaming only supported for generateContent method.');
         }
-        try {
-            $response = $this->http->withOptions([
-                'stream' => true,
-            ])->post("/v1beta/models/{$params['model']}:streamGenerateContent", $this->buildRequestBody($params));
 
-            $body = $response->getBody();
+        $response = $this->http
+            ->withOptions(['stream' => true])
+            ->post(
+                self::API_VERSION."/models/{$params['model']}:streamGenerateContent?alt=sse",
+                $this->buildRequestBody($params),
+            );
+
+        $this->ensureSuccessful($response);
+
+        try {
+            $body = $response->toPsrResponse()->getBody();
+            $chunkSize = (int) config('gemini.stream.chunk_size', 1024);
             $buffer = '';
 
-            while (!$body->eof()) {
-                $chunk = $body->read(config('gemini.stream.chunk_size', '1024'));
-                if (!empty($chunk)) {
-                    $buffer .= $chunk;
-                    $lines = explode("\n", $buffer);
-                    $buffer = array_pop($lines); // Keep last incomplete line
+            while (! $body->eof()) {
+                $buffer .= $body->read($chunkSize);
+                $lines = explode("\n", $buffer);
+                $buffer = array_pop($lines);
 
-                    foreach ($lines as $line) {
-                        if (strpos($line, 'data: ') === 0) {
-                            $jsonStr = substr($line, 5); // Remove 'data: ' prefix
-                            $data = json_decode(trim($jsonStr), true);
-
-                            if (json_last_error() === JSON_ERROR_NONE) {
-                                $part = $data['candidates'][0]['content']['parts'][0] ?? [];
-                                $callback($part);
-                            }
-                        }
-                    }
+                foreach ($lines as $line) {
+                    $this->emitStreamLine($line, $callback);
                 }
             }
-        } catch (\Exception $e) {
-            throw new StreamException(
-                $e->getMessage(),
-                $e->getCode(),
-                $e
-            );
+
+            $this->emitStreamLine($buffer, $callback);
+        } catch (Throwable $e) {
+            throw new StreamException($e->getMessage(), (int) $e->getCode(), $e);
         }
     }
 
-    protected function executeRequest(array $params, string $responseType)
+    /**
+     * @template T of BaseResponse
+     *
+     * @param  class-string<T>  $responseClass
+     * @return T
+     */
+    protected function executeRequest(array $params, string $responseClass, bool $forAudio = false): BaseResponse
     {
-        $method = $params['method'] ?? 'generateContent';
-        $body = $this->buildRequestBody($params, $method === 'predictLongRunning', $responseType === 'Audio');
-        $endpoint = "/v1beta/models/{$params['model']}:" . $method;
+        $method = $this->method($params);
+        $body = $this->buildRequestBody($params, $forAudio);
+        $response = $this->http->post(self::API_VERSION."/models/{$params['model']}:{$method->value}", $body);
 
-        $response = $this->http->post($endpoint, $body);
+        $this->ensureSuccessful($response);
 
-        if ($method === 'predictLongRunning') {
-            $operation = $response->json()['name'];
-            do {
-                sleep(5);
-                $status = $this->http->get($operation)->json();
-            } while (!$status['done']);
-            return $this->handleResponse($this->http->get("/v1beta/" . $status['response']['generatedSamples'][0][$responseType === 'Video' ? 'video' : 'uri']), $responseType);
+        if ($method === GenerationMethod::PREDICT_LONG_RUNNING) {
+            return new $responseClass($this->awaitOperation($response->json('name')));
         }
 
-        // Check for error response
-        if (isset($response->json()['candidates'][0]['finishReason']) && $response->json()['candidates'][0]['finishReason'] != 'STOP') {
+        $finishReason = $response->json('candidates.0.finishReason');
+
+        if ($finishReason !== null && $finishReason !== 'STOP') {
             Log::error('Gemini API error response', ['response' => $response->json()]);
-            throw new ApiException("API request failed with finishReason: {$response->json()['candidates'][0]['finishReason']}");
+
+            throw new ApiException("API request failed with finishReason: {$finishReason}");
         }
 
-        return $this->handleResponse($response, $responseType);
+        return new $responseClass($response->json() ?? []);
     }
 
-    protected function buildRequestBody(array $params, bool $forLongRunning = false, bool $forAudio = false): array
+    /**
+     * Poll a long-running operation until done and return its final payload.
+     * Generated video bytes are downloaded and attached as base64 under `video`.
+     */
+    protected function awaitOperation(string $operation): array
     {
-        $method = $params['method'] ?? 'generateContent';
-        $isPredict = $method === 'predict' || $method === 'predictLongRunning';
-        if ($isPredict) {
-            // Structure for predict/predictLongRunning
-            $instance = ['prompt' => $params['prompt'] ?? ''];
-            if (isset($params['filePath']) && isset($params['fileType'])) {
-                $filePart = $params['fileType'] === 'image' ? [
-                    'inlineData' => [
-                        'mimeType' => $this->getMimeType($params['fileType'], $params['filePath']),
-                        'data' => base64_encode(file_get_contents($params['filePath']))
-                    ]
-                ] : [
-                    'fileData' => [
-                        'mimeType' => $this->getMimeType($params['fileType'], $params['filePath']),
-                        'fileUri' => $this->upload($params['fileType'], $params['filePath'])
-                    ]
-                ];
-                $instance = array_merge($instance, $filePart);
-            } elseif (isset($params['fileUri']) && isset($params['fileType'])) {
-                $filePart = [
-                    'fileData' => [
-                        'mimeType' => $params['fileType'],
-                        'fileUri' => $params['fileUri']
-                    ]
-                ];
-                $instance = array_merge($instance, $filePart);
+        $interval = (int) config('gemini.long_running.poll_interval', 5);
+        $deadline = time() + (int) config('gemini.long_running.timeout', 600);
+
+        do {
+            if (time() > $deadline) {
+                throw new ApiException("Long-running operation timed out: {$operation}");
             }
-            $body = [
-                'instances' => [$instance],
-                'parameters' => [
-                    'temperature' => $params['temperature'] ?? 0.7,
-                    'maxOutputTokens' => $params['maxTokens'] ?? 1024,
-                ],
-            ];
-            if (isset($params['safetySettings'])) {
-                $body['parameters']['safetySettings'] = $params['safetySettings'];
-            }
-        } else {
-            // Structure for generateContent
-            if (!isset($params['prompt']) || empty($params['prompt'])) {
-                throw new ValidationException('Prompt is required for audio generation (TTS).');
-            }
-            $body = [
-                'contents' => $params['contents'] ?? [['parts' => [['text' => $params['prompt'] ?? '']]]],
-                'generationConfig' => [
-                    'temperature' => $params['temperature'] ?? 0.7,
-                    'maxOutputTokens' => $params['maxTokens'] ?? 1024,
-                ],
-                'safetySettings' => $params['safetySettings'] ?? config('gemini.safety_settings'),
-            ];
-            if (isset($params['filePath']) && isset($params['fileType'])) {
-                $filePart = $params['fileType'] === 'image' ? [
-                    'inlineData' => [
-                        'mimeType' => $this->getMimeType($params['fileType'], $params['filePath']),
-                        'data' => base64_encode(file_get_contents($params['filePath']))
-                    ]
-                ] : [
-                    'fileData' => [
-                        'mimeType' => $this->getMimeType($params['fileType'], $params['filePath']),
-                        'fileUri' => $this->upload($params['fileType'], $params['filePath'])
-                    ]
-                ];
-                $body['contents'][0]['parts'][] = $filePart;
-            } elseif (isset($params['fileUri']) && isset($params['fileType'])) {
-                $filePart = [
-                    'fileData' => [
-                        'mimeType' => $params['fileType'],
-                        'fileUri' => $params['fileUri']
-                    ]
-                ];
-                $body['contents'][0]['parts'][] = $filePart;
-            }
-            if ($forAudio) {
-                $body['generationConfig']['responseModalities'] = ['AUDIO'];
-                $speechConfig = config('gemini.default_speech_config', []);
-                if (isset($params['multiSpeaker']) && $params['multiSpeaker']) {
-                    $speechConfig['multiSpeakerVoiceConfig'] = [
-                        'speakerVoiceConfigs' => $params['speakerVoices'] ?? []
-                    ];
-                } else {
-                    $speechConfig['voiceConfig'] = [
-                        'prebuiltVoiceConfig' => [
-                            'voiceName' => $params['voiceName'] ?? $speechConfig['voiceName'] ?? config('gemini.providers.gemini.default_speech_config.voiceName')
-                        ]
-                    ];
-                }
-                $body['generationConfig']['speechConfig'] = $speechConfig;
-            }
+
+            Sleep::for($interval)->seconds();
+
+            $status = $this->http->get(self::API_VERSION."/{$operation}");
+            $this->ensureSuccessful($status);
+            $data = $status->json();
+        } while (! ($data['done'] ?? false));
+
+        if (isset($data['error'])) {
+            throw new ApiException($data['error']['message'] ?? 'Long-running operation failed');
         }
 
-        if (isset($params['system'])) {
-            $body[$isPredict ? 'parameters' : 'systemInstruction'] = ['parts' => [['text' => $params['system']]]];
+        $result = $data['response'] ?? [];
+        $sample = $result['generateVideoResponse']['generatedSamples'][0]
+            ?? $result['generatedSamples'][0]
+            ?? [];
+        $uri = $sample['video']['uri'] ?? null;
+
+        if ($uri === null) {
+            return $result;
         }
 
-        if (isset($params['history'])) {
-            $body['contents'] = [['role' => 'user', 'parts' => [['text' => $params['prompt'] ?? '']]]];
-            $body[$isPredict ? 'instances' : 'contents'] = array_merge($params['history'], $body[$isPredict ? 'instances' : 'contents']);
+        $download = $this->http->withOptions(['allow_redirects' => true])->get($uri);
+        $this->ensureSuccessful($download);
+
+        return [...$result, 'uri' => $uri, 'video' => base64_encode($download->body())];
+    }
+
+    protected function buildRequestBody(array $params, bool $forAudio = false): array
+    {
+        return $this->method($params)->isPredict()
+            ? $this->buildPredictBody($params)
+            : $this->buildGenerateContentBody($params, $forAudio);
+    }
+
+    protected function buildPredictBody(array $params): array
+    {
+        $parameters = array_filter([
+            'temperature' => $params['temperature'] ?? null,
+            'maxOutputTokens' => $params['maxTokens'] ?? null,
+            'safetySettings' => $params['safetySettings'] ?? null,
+        ], static fn (mixed $value): bool => $value !== null);
+
+        return array_filter([
+            'instances' => [['prompt' => $params['prompt'] ?? '', ...$this->filePart($params)]],
+            'parameters' => $parameters ?: null,
+        ]);
+    }
+
+    protected function buildGenerateContentBody(array $params, bool $forAudio): array
+    {
+        if (blank($params['prompt'] ?? null)) {
+            throw new ValidationException('A prompt is required for content generation.');
         }
 
-        if (isset($params['functions'])) {
-            $body[$isPredict ? 'parameters' : 'tools'] = ['functionDeclarations' => $params['functions']];
+        $userParts = [['text' => $params['prompt']]];
+
+        if ($filePart = $this->filePart($params)) {
+            $userParts[] = $filePart;
         }
+
+        $generationConfig = array_filter([
+            'temperature' => $params['temperature'] ?? null,
+            'maxOutputTokens' => $params['maxTokens'] ?? null,
+        ], static fn (mixed $value): bool => $value !== null);
 
         if (isset($params['structuredSchema'])) {
-            $body[$isPredict ? 'parameters' : 'generationConfig']['responseMimeType'] = 'application/json';
-            $body[$isPredict ? 'parameters' : 'generationConfig']['responseSchema'] = $params['structuredSchema'];
+            $generationConfig['responseMimeType'] = 'application/json';
+            $generationConfig['responseSchema'] = $params['structuredSchema'];
         }
 
-        if ($forLongRunning) {
-            // For predictLongRunning, no additional changes needed as per docs
+        if ($forAudio) {
+            $generationConfig['responseModalities'] = ['AUDIO'];
+            $generationConfig['speechConfig'] = $this->speechConfig($params);
         }
-        return $body;
+
+        return array_filter([
+            'contents' => [...($params['history'] ?? []), ['role' => 'user', 'parts' => $userParts]],
+            'systemInstruction' => isset($params['system']) ? ['parts' => [['text' => $params['system']]]] : null,
+            'tools' => isset($params['functions']) ? [['functionDeclarations' => $params['functions']]] : null,
+            'generationConfig' => $generationConfig ?: null,
+            'safetySettings' => $params['safetySettings'] ?? config('gemini.safety_settings'),
+            'cachedContent' => $params['cachedContent'] ?? null,
+        ], static fn (mixed $value): bool => $value !== null && $value !== []);
+    }
+
+    /**
+     * Build the inline / file-URI part for an attached file, if any.
+     */
+    protected function filePart(array $params): array
+    {
+        if (! isset($params['fileType'])) {
+            return [];
+        }
+
+        if (isset($params['filePath'])) {
+            $mimeType = $this->getMimeType($params['fileType'], $params['filePath']);
+
+            return $params['fileType'] === 'image'
+                ? ['inlineData' => ['mimeType' => $mimeType, 'data' => base64_encode(file_get_contents($params['filePath']))]]
+                : ['fileData' => ['mimeType' => $mimeType, 'fileUri' => $this->upload($params['fileType'], $params['filePath'])]];
+        }
+
+        if (isset($params['fileUri'])) {
+            return ['fileData' => ['mimeType' => $params['fileType'], 'fileUri' => $params['fileUri']]];
+        }
+
+        return [];
+    }
+
+    protected function speechConfig(array $params): array
+    {
+        if ($params['multiSpeaker'] ?? false) {
+            return [
+                'multiSpeakerVoiceConfig' => [
+                    'speakerVoiceConfigs' => array_map(static fn (array $speaker): array => [
+                        'speaker' => $speaker['speaker'],
+                        'voiceConfig' => ['prebuiltVoiceConfig' => ['voiceName' => $speaker['voiceName']]],
+                    ], $params['speakerVoices'] ?? []),
+                ],
+            ];
+        }
+
+        return [
+            'voiceConfig' => [
+                'prebuiltVoiceConfig' => [
+                    'voiceName' => $params['voiceName'] ?? $this->config['default_speech_config']['voiceName'] ?? 'Kore',
+                ],
+            ],
+        ];
+    }
+
+    protected function emitStreamLine(string $line, callable $callback): void
+    {
+        if (! str_starts_with($line, 'data:')) {
+            return;
+        }
+
+        $data = json_decode(trim(substr($line, 5)), true);
+
+        foreach ($data['candidates'][0]['content']['parts'] ?? [] as $part) {
+            $callback($part);
+        }
+    }
+
+    protected function method(array $params): GenerationMethod
+    {
+        return GenerationMethod::tryFrom($params['method'] ?? '') ?? GenerationMethod::GENERATE_CONTENT;
+    }
+
+    /**
+     * Resolve the TTL / expireTime payload; expireTime takes precedence.
+     */
+    protected function expiration(array $params, bool $withDefault = true): array
+    {
+        return match (true) {
+            filled($params['expireTime'] ?? null) => ['expireTime' => $params['expireTime']],
+            filled($params['ttl'] ?? null) => ['ttl' => $params['ttl']],
+            $withDefault => ['ttl' => config('gemini.caching.default_ttl')],
+            default => [],
+        };
+    }
+
+    /**
+     * Normalise "abc" or "files/abc" into the fully-qualified resource name.
+     */
+    protected function resourceName(string $collection, string $name): string
+    {
+        if (blank($name)) {
+            throw new ValidationException('Resource name is required.');
+        }
+
+        return str_starts_with($name, "{$collection}/") ? $name : "{$collection}/{$name}";
     }
 }
